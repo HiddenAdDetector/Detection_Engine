@@ -20,6 +20,8 @@ def _run_cli(*arguments: object, env_extra: dict[str, str] | None = None):
     for key in tuple(environment):
         if key.startswith("GEMINI_"):
             environment.pop(key)
+    # Keep a developer's script-adjacent .env from enabling real API calls.
+    environment["GEMINI_API_KEY"] = ""
     environment["PYTHONUTF8"] = "1"
     if env_extra:
         environment.update(env_extra)
