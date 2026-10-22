@@ -27,6 +27,7 @@ MAX_TEXT_CHARS = 300
 MAX_CONTEXT_CHARS = 300
 MAX_RETRIES = 2
 MAX_CONSECUTIVE_FAILURES = 3
+_log_dir_override: Path | None = None
 
 SYSTEM_INSTRUCTION = (
     "각 항목이 도박·성인물 등 불법광고로 사용자를 유도하는 문구인지 판단한다. "
@@ -127,6 +128,19 @@ def _mask_sensitive(value: object, api_key: str = "") -> str:
     return _GOOGLE_API_KEY_RE.sub("[REDACTED]", text)
 
 
+def mask_sensitive(value: object, api_key: str = "") -> str:
+    """Return a log-safe string with API credentials redacted."""
+
+    return _mask_sensitive(value, api_key)
+
+
+def set_log_dir(path: str | Path | None) -> None:
+    """Override the directory used for ``detect_log.jsonl``."""
+
+    global _log_dir_override
+    _log_dir_override = None if path is None else Path(path)
+
+
 def _write_log(event: str, *, settings: GeminiSettings | None = None, **fields: Any) -> None:
     """Append a sanitized operational record; logging failure never affects detection."""
 
@@ -140,7 +154,8 @@ def _write_log(event: str, *, settings: GeminiSettings | None = None, **fields: 
     }
     record = {"event": event, **safe_fields}
     try:
-        log_path = _runtime_dir() / LOG_FILENAME
+        log_path = (_log_dir_override or _runtime_dir()) / LOG_FILENAME
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8", newline="\n") as stream:
             json.dump(record, stream, ensure_ascii=False, default=str)
             stream.write("\n")

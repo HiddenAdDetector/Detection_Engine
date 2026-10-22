@@ -131,6 +131,9 @@ def detect(
     candidates: list[ai_judge.AiCandidate] = []
     index_by_candidate_id: dict[str, int] = {}
     for index, element in enumerate(elements):
+        if cancel_event is not None and cancel_event.is_set():
+            break
+
         verdict = _detect_one(element)
         verdicts.append(verdict)
         candidate_id = f"ai_{index + 1:04d}"

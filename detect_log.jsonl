@@ -1,0 +1,2 @@
+{"event": "ai_call_error", "error": "504 DEADLINE_EXCEEDED. {'error': {'code': 504, 'message': 'Deadline expired before operation could complete.', 'status': 'DEADLINE_EXCEEDED'}}", "attempt": 1, "rate_limited": false}
+{"event": "ai_result", "candidate_id": "ai_0001", "is_ad": true, "confidence": 0.95, "reason": "신규 회원 가입 시 충전 혜택을 제공하며 텔레그램 문의를 유도하고 있어 도박 또는 성인물 등의 불법 광고로 판단됩니다.", "model": "gemini-3.5-flash-lite"}

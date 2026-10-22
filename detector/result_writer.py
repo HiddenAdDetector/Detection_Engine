@@ -47,6 +47,7 @@ def write_result(
     verdicts: list[Verdict],
     out_dir: str | Path | None = None,
     tool_version: str = "",
+    topic: str = TOPIC,
 ) -> Path:
     """Write a schema-strict result file and return its absolute path.
 
@@ -85,7 +86,7 @@ def write_result(
 
     payload = {
         "meta": {
-            "topic": TOPIC,
+            "topic": topic,
             "entry_url": entry_url,
             "started_at": started.isoformat(timespec="seconds"),
             "finished_at": finished.isoformat(timespec="seconds"),
