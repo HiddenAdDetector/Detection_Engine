@@ -73,13 +73,28 @@ def _detect_one(element: Element) -> Verdict:
 
 
 def _ai_candidate(element: Element, verdict: Verdict, candidate_id: str) -> ai_judge.AiCandidate | None:
-    if verdict.is_violation or not element.text.strip():
-        return None
-    if find_illegal_keywords(verdict.normalized_text):
+    if not element.text.strip():
         return None
 
     contextual_text = f"{verdict.normalized_text} {element.context}"
     prevention_context = find_prevention_context(contextual_text)
+    accessibility_location = is_accessibility_location(element.location)
+
+    if verdict.is_violation:
+        techniques = tuple(verdict.techniques)
+        hidden_only = set(techniques) <= {"TRANSPARENT", "OFFSCREEN"}
+        needs_review = hidden_only or bool(prevention_context) or accessibility_location
+        if not needs_review:
+            return None
+        return ai_judge.AiCandidate(
+            id=candidate_id,
+            normalized_text=verdict.normalized_text,
+            context=element.context,
+            techniques=techniques,
+        )
+
+    if find_illegal_keywords(verdict.normalized_text):
+        return None
     if prevention_context and not find_ad_lures(contextual_text):
         return None
 
@@ -98,7 +113,7 @@ def _ai_candidate(element: Element, verdict: Verdict, candidate_id: str) -> ai_j
         return None
 
     hidden_only = set(techniques) <= {"TRANSPARENT", "OFFSCREEN"}
-    if hidden_only and is_accessibility_location(element.location):
+    if hidden_only and accessibility_location:
         return None
     return ai_judge.AiCandidate(
         id=candidate_id,
@@ -154,15 +169,25 @@ def detect(
     for candidate in candidates:
         result = ai_results.get(candidate.id)
         if result is not None:
-            if result.is_ad and result.confidence >= min_confidence:
+            if result.confidence >= min_confidence:
                 verdict_index = index_by_candidate_id[candidate.id]
-                verdicts[verdict_index] = replace(
-                    verdicts[verdict_index],
-                    is_violation=True,
-                    techniques=list(candidate.techniques),
-                    reason=f"AI 판정({result.confidence:.2f}): {result.reason}",
-                    decision_source="ai",
-                )
+                prior = verdicts[verdict_index]
+                if result.is_ad:
+                    verdicts[verdict_index] = replace(
+                        prior,
+                        is_violation=True,
+                        techniques=list(candidate.techniques),
+                        reason=f"AI 판정({result.confidence:.2f}): {result.reason}",
+                        decision_source="ai",
+                    )
+                elif prior.is_violation:
+                    verdicts[verdict_index] = replace(
+                        prior,
+                        is_violation=False,
+                        techniques=[],
+                        reason=f"AI 재검토 제외({result.confidence:.2f}): {result.reason}",
+                        decision_source="ai",
+                    )
         processed += 1
         _notify(on_progress, processed, len(candidates), "ai")
     _notify(on_progress, total, total, "done")

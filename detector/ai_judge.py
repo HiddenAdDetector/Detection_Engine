@@ -307,17 +307,22 @@ def _wait_before_retry(
 
 def _deduplicate_candidates(
     candidates: Iterable[AiCandidate],
-) -> tuple[list[AiCandidate], dict[str, list[str]]]:
+) -> tuple[list[AiCandidate], dict[tuple[str, str, tuple[str, ...]], list[str]]]:
     representatives: list[AiCandidate] = []
-    ids_by_text: dict[str, list[str]] = {}
+    ids_by_signature: dict[tuple[str, str, tuple[str, ...]], list[str]] = {}
     for candidate in candidates:
         if not candidate.normalized_text.strip():
             continue
-        ids = ids_by_text.setdefault(candidate.normalized_text, [])
+        signature = (
+            candidate.normalized_text.strip(),
+            candidate.context.strip(),
+            candidate.techniques,
+        )
+        ids = ids_by_signature.setdefault(signature, [])
         ids.append(candidate.id)
         if len(ids) == 1:
             representatives.append(candidate)
-    return representatives, ids_by_text
+    return representatives, ids_by_signature
 
 
 def judge(
@@ -328,7 +333,7 @@ def judge(
 
     settings = load_settings()
     deadline = time.monotonic() + settings.total_budget_sec
-    representatives, ids_by_text = _deduplicate_candidates(candidates)
+    representatives, ids_by_signature = _deduplicate_candidates(candidates)
     if not representatives or not settings.api_key:
         return {}
     if cancel_event is not None and cancel_event.is_set():
@@ -431,9 +436,12 @@ def judge(
                 )
 
     expanded: dict[str, AiResult] = {}
-    representative_by_text = {candidate.normalized_text: candidate.id for candidate in representatives}
-    for normalized_text, candidate_ids in ids_by_text.items():
-        representative_id = representative_by_text[normalized_text]
+    representative_by_signature = {
+        (candidate.normalized_text.strip(), candidate.context.strip(), candidate.techniques): candidate.id
+        for candidate in representatives
+    }
+    for signature, candidate_ids in ids_by_signature.items():
+        representative_id = representative_by_signature[signature]
         result = representative_results.get(representative_id)
         if result is None:
             continue

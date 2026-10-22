@@ -13,6 +13,32 @@ from .models import Verdict
 TOPIC = "TOPIC"
 KST = timezone(timedelta(hours=9))
 ALLOWED_TECHNIQUES = frozenset({"HOMOGLYPH", "JAMO", "TRANSPARENT", "OFFSCREEN"})
+FINDING_KEYS = frozenset(
+    {"id", "url", "is_violation", "location", "evidence_text", "technique"}
+)
+META_REQUIRED_KEYS = frozenset(
+    {"topic", "entry_url", "started_at", "finished_at", "elapsed_sec"}
+)
+META_ALLOWED_KEYS = META_REQUIRED_KEYS | {"tool_version"}
+AMBIGUOUS_BARE_TAGS = frozenset(
+    {
+        "a",
+        "div",
+        "em",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "li",
+        "p",
+        "small",
+        "span",
+        "strong",
+        "td",
+    }
+)
 
 
 def _as_kst(value: datetime) -> datetime:
@@ -26,13 +52,77 @@ def _comparison_url(url: str) -> tuple[str, str, tuple[tuple[str, str], ...]]:
 
     parsed = urlsplit(url)
     path = parsed.path.rstrip("/")
-    query = tuple(sorted(parse_qsl(parsed.query, keep_blank_values=True), key=lambda item: item[0]))
+    query = tuple(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
     return parsed.netloc.casefold(), path, query
 
 
 def _finding_location(verdict: Verdict) -> str:
     frames = [f'iframe[src="{source}"]' for source in verdict.frame_path]
     return " >>> ".join([*frames, verdict.location])
+
+
+def is_ambiguous_location(location: str) -> bool:
+    """Return whether a selector is only a common bare tag.
+
+    Such selectors normally identify multiple elements and are scored as wrong
+    by the contest.  For iframe locations only the innermost selector is
+    inspected because the frame chain itself does not make a bare ``div``
+    unique within that document.
+    """
+
+    selector = location.rsplit(" >>> ", 1)[-1].strip().casefold()
+    return selector in AMBIGUOUS_BARE_TAGS
+
+
+def _validate_payload(payload: object) -> None:
+    if not isinstance(payload, dict) or set(payload) != {"meta", "findings"}:
+        raise ValueError("result.json must contain exactly meta and findings")
+
+    meta = payload["meta"]
+    findings = payload["findings"]
+    if (
+        not isinstance(meta, dict)
+        or not META_REQUIRED_KEYS.issubset(meta)
+        or not set(meta).issubset(META_ALLOWED_KEYS)
+    ):
+        raise ValueError("result.json meta is missing required fields")
+    if not isinstance(findings, list):
+        raise ValueError("result.json findings must be an array")
+    for key in ("topic", "entry_url", "started_at", "finished_at"):
+        if not isinstance(meta[key], str):
+            raise ValueError(f"result.json meta.{key} must be a string")
+    elapsed = meta["elapsed_sec"]
+    if isinstance(elapsed, bool) or not isinstance(elapsed, (int, float)) or elapsed < 0:
+        raise ValueError("result.json meta.elapsed_sec must be a non-negative number")
+    for key in ("started_at", "finished_at"):
+        try:
+            datetime.fromisoformat(meta[key])
+        except ValueError as error:
+            raise ValueError(f"result.json meta.{key} must be ISO 8601") from error
+
+    ids: set[str] = set()
+    finding_keys: set[tuple[tuple[str, str, tuple[tuple[str, str], ...]], str, str]] = set()
+    for finding in findings:
+        if not isinstance(finding, dict) or set(finding) != FINDING_KEYS:
+            raise ValueError("result.json finding has an invalid schema")
+        for key in ("id", "url", "location", "evidence_text", "technique"):
+            if not isinstance(finding[key], str) or not finding[key].strip():
+                raise ValueError(f"result.json finding.{key} must be a non-empty string")
+        if finding["is_violation"] is not True:
+            raise ValueError("result.json finding.is_violation must be true")
+        if finding["technique"] not in ALLOWED_TECHNIQUES:
+            raise ValueError("result.json finding.technique is unsupported")
+        if finding["id"] in ids:
+            raise ValueError("result.json finding ids must be unique")
+        ids.add(finding["id"])
+        dedup_key = (
+            _comparison_url(finding["url"]),
+            finding["location"],
+            finding["technique"],
+        )
+        if dedup_key in finding_keys:
+            raise ValueError("result.json contains a duplicate finding")
+        finding_keys.add(dedup_key)
 
 
 def _default_output_dir() -> Path:
@@ -66,6 +156,8 @@ def write_result(
         if not verdict.is_violation:
             continue
         location = _finding_location(verdict)
+        if is_ambiguous_location(location):
+            continue
         for technique in dict.fromkeys(verdict.techniques):
             if technique not in ALLOWED_TECHNIQUES:
                 raise ValueError(f"Unsupported result technique: {technique!r}")
@@ -95,6 +187,7 @@ def write_result(
         },
         "findings": findings,
     }
+    _validate_payload(payload)
 
     destination = Path(out_dir) if out_dir is not None else _default_output_dir()
     destination = destination.resolve()
@@ -105,4 +198,8 @@ def write_result(
         json.dump(payload, stream, ensure_ascii=False, indent=2)
         stream.write("\n")
     temporary_path.replace(result_path)
+    raw = result_path.read_bytes()
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raise ValueError("result.json must not contain a UTF-8 BOM")
+    _validate_payload(json.loads(raw.decode("utf-8")))
     return result_path

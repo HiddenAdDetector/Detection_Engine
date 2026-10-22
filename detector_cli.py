@@ -14,12 +14,13 @@ from typing import Any
 from detector import ai_judge
 from detector.engine import detect
 from detector.models import Element, Verdict
-from detector.result_writer import TOPIC, write_result
+from detector.result_writer import TOPIC, is_ambiguous_location, write_result
 
 KST = timezone(timedelta(hours=9))
 DEFAULT_TOPIC = TOPIC
-DEFAULT_TOOL_VERSION = "0.4.0"
+DEFAULT_TOOL_VERSION = "0.5.0"
 CANCEL_POLL_SEC = 0.5
+DEFAULT_DEADLINE_SEC = 1700.0
 
 
 class InputError(ValueError):
@@ -81,6 +82,8 @@ def _element_from_dict(raw: object) -> Element:
 
     url = _as_string(raw.get("url"), "element.url")
     location = _as_string(raw.get("location"), "element.location")
+    if is_ambiguous_location(location):
+        raise InputError("element.location must identify one element, not a common bare tag")
     text = _as_string(raw.get("text"), "element.text")
     context = raw.get("context", "")
     if context is None:
@@ -171,7 +174,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-dir", type=Path, default=_runtime_dir())
     parser.add_argument("--entry-url")
     parser.add_argument("--started-at")
-    parser.add_argument("--deadline-sec", type=float)
+    parser.add_argument("--deadline-sec", type=float, default=DEFAULT_DEADLINE_SEC)
     parser.add_argument("--cancel-file", type=Path)
     parser.add_argument("--no-ai", action="store_true")
     parser.add_argument("--topic", default=DEFAULT_TOPIC)

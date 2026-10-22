@@ -19,7 +19,7 @@ detector_cli.exe --input elements.json --out-dir output
 옵션:
 
 - `--entry-url URL`, `--started-at ISO-8601`: 명령행 값이 입력 JSON 값보다 우선한다. 둘 다 없으면 각각 첫 유효 요소 URL과 현재 KST 시각을 쓴다.
-- `--deadline-sec N`: N초가 지나면 취소 플래그를 세우고 확보한 결과만 저장한다.
+- `--deadline-sec N`: N초가 지나면 취소 플래그를 세우고 확보한 결과만 저장한다. 생략 시 공모전 30분 상한보다 짧은 1700초를 적용한다.
 - `--cancel-file PATH`: 해당 파일이 생겼는지 0.5초마다 확인하고, 발견하면 부분 결과를 저장한다. Windows에서 강제 종료 대신 이 방식을 사용한다.
 - `--no-ai`: Gemini를 호출하지 않고 규칙 판정만 수행한다.
 - `--topic`, `--tool-version`: 결과 메타데이터를 지정한다. 기본 topic은 기존 `TOPIC` 상수와 같다.
@@ -53,6 +53,8 @@ detector_cli.exe --input elements.json --out-dir output
 `frame_path`와 `framePath`를 모두 허용한다. 문자열 하나는 한 항목짜리 목록으로 처리한다. `style`, `bbox`, `context`가 없으면 빈 값으로 처리하며 알 수 없는 필드는 무시한다. 잘못된 요소 하나는 경고 후 건너뛴다.
 
 `frame_path`는 바깥 iframe부터 안쪽 iframe까지의 절대 URL 목록이고, `location`은 현재 iframe 문서 내부의 유일한 CSS 선택자여야 한다. A가 최종 결과에서 `iframe[src="..."] >>> 선택자`로 결합한다. 같은 선택자가 여러 요소를 가리키면 채점 오답이 될 수 있다.
+
+`div`, `span`, `p`, `a`처럼 공통 태그명만 사용해 한 요소를 특정할 수 없는 `location`은 입력에서 제외한다. B는 클래스, ID, 속성 또는 `:nth-of-type()` 등을 포함한 고유 선택자를 전달해야 한다.
 
 ## stdout과 stderr
 

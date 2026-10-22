@@ -76,6 +76,28 @@ def test_normal_response_and_duplicate_text_use_one_transmitted_candidate(monkey
     assert set(sent[0]) == {"id", "normalized_text", "context", "techniques"}
 
 
+def test_same_text_with_different_context_or_technique_is_not_deduplicated(monkeypatch, tmp_path) -> None:
+    response = json.dumps(
+        [
+            {"id": "a", "is_ad": False, "confidence": 0.9, "reason": "예방 안내"},
+            {"id": "b", "is_ad": True, "confidence": 0.9, "reason": "가입 광고"},
+            {"id": "c", "is_ad": True, "confidence": 0.9, "reason": "다른 은닉 기법"},
+        ]
+    )
+    client = _install_fake(monkeypatch, tmp_path, _settings(), [response])
+    candidates = [
+        AiCandidate("a", "동일 문구", "예방 및 신고 안내", ("OFFSCREEN",)),
+        AiCandidate("b", "동일 문구", "가입 보너스 안내", ("OFFSCREEN",)),
+        AiCandidate("c", "동일 문구", "가입 보너스 안내", ("TRANSPARENT",)),
+    ]
+
+    results = ai_judge.judge(candidates)
+
+    assert set(results) == {"a", "b", "c"}
+    sent = json.loads(client.models.calls[0]["contents"])  # type: ignore[arg-type]
+    assert len(sent) == 3
+
+
 def test_transmitted_text_and_context_are_capped_at_300_characters(monkeypatch, tmp_path) -> None:
     response = json.dumps([{"id": "a", "is_ad": False, "confidence": 1, "reason": "광고 아님"}])
     client = _install_fake(monkeypatch, tmp_path, _settings(), [response])

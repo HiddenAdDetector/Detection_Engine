@@ -99,3 +99,20 @@ def test_rejects_nonstandard_technique(tmp_path) -> None:
             tmp_path,
             "dev",
         )
+
+
+@pytest.mark.parametrize(
+    "location",
+    ["div", "span", 'iframe[src="https://example.go.kr/frame"] >>> div'],
+)
+def test_omits_ambiguous_bare_tag_locations(tmp_path, location: str) -> None:
+    path = write_result(
+        "https://example.go.kr",
+        datetime(2026, 10, 21, 9),
+        datetime(2026, 10, 21, 9, 1),
+        [_verdict(location=location, frame_path=[])],
+        tmp_path,
+        "dev",
+    )
+
+    assert json.loads(path.read_text(encoding="utf-8"))["findings"] == []

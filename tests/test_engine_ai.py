@@ -83,6 +83,46 @@ def test_low_confidence_and_negative_ai_results_do_not_promote(monkeypatch) -> N
     assert [verdict.decision_source for verdict in verdicts] == ["rule", "rule"]
 
 
+def test_ai_can_demote_ambiguous_rule_positive_hidden_finding(monkeypatch) -> None:
+    captured: list[ai_judge.AiCandidate] = []
+
+    def fake_judge(candidates, cancel_event=None):
+        del cancel_event
+        captured.extend(candidates)
+        return {
+            candidates[0].id: AiResult(candidates[0].id, False, 0.96, "정책 안내 문맥")
+        }
+
+    monkeypatch.setattr(ai_judge, "judge", fake_judge)
+    monkeypatch.setattr(ai_judge, "load_settings", lambda: _settings())
+
+    verdict = detect([_element("카지노 안내", style={"display": "none"})])[0]
+
+    assert len(captured) == 1
+    assert not verdict.is_violation
+    assert verdict.techniques == []
+    assert verdict.decision_source == "ai"
+    assert "재검토 제외" in verdict.reason
+
+
+def test_obvious_jamo_rule_positive_skips_ai_review(monkeypatch) -> None:
+    captured: list[ai_judge.AiCandidate] = []
+
+    def fake_judge(candidates, cancel_event=None):
+        del cancel_event
+        captured.extend(candidates)
+        return {}
+
+    monkeypatch.setattr(ai_judge, "judge", fake_judge)
+    monkeypatch.setattr(ai_judge, "load_settings", lambda: _settings())
+
+    verdict = detect([_element("ㅋㅏㅈㅣㄴㅗ ㅂㅗㄴㅓㅅㅡ")])[0]
+
+    assert captured == []
+    assert verdict.is_violation
+    assert verdict.techniques == ["JAMO"]
+
+
 def test_prevention_and_accessibility_only_elements_are_not_candidates(monkeypatch) -> None:
     captured: list[ai_judge.AiCandidate] = []
 

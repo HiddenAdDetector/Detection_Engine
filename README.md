@@ -11,11 +11,14 @@
 - `TRANSPARENT`: 투명도, 투명 글자색, 배경과 낮은 명암비 등 탐지
 - `OFFSCREEN`: 작은 글자, 화면 밖 배치, `display:none`, clipping 등 탐지
 - 예방·신고·단속 안내와 접근성용 숨김 텍스트의 오탐 억제
-- 선택적 Google Gemini 문맥 판정과 실패 시 규칙 엔진 자동 폴백
-- 제한시간과 취소 파일을 이용한 부분 결과 저장
+- 선택적 Google Gemini 문맥 판정, 숨김형 규칙 양성 재검토, 실패 시 규칙 엔진 자동 폴백
+- 공모전 30분 상한보다 짧은 기본 제한시간과 취소 파일을 이용한 부분 결과 저장
+- 저장 후 결과 스키마·중복·UTF-8 BOM 재검증과 모호한 위치 선택자 차단
 - PyInstaller 단일 실행 파일 배포 지원
 
-은닉 상태만으로는 위반으로 판정하지 않습니다. 규칙 엔진은 불법광고 키워드가 함께 확인된 경우에만 위반으로 확정하며, 사전에 없는 의심 후보는 설정된 경우에만 Gemini에 전달합니다.
+은닉 상태만으로는 위반으로 판정하지 않습니다. 규칙 엔진은 불법광고 키워드가 함께 확인된 경우에만 위반으로 판단합니다. 사전에 없는 의심 후보와 숨김형 규칙 양성 중 오탐 가능성이 있는 결과는 설정된 경우 Gemini가 문맥을 재검토하며, 별도 오탐 신호가 없는 명확한 자모·닮은꼴 문자 결과는 규칙 판정을 유지합니다.
+
+현재 도구 버전은 **0.5.0**입니다.
 
 ## 환경
 
@@ -79,7 +82,7 @@ detector_cli.exe --input <elements.json> --out-dir <폴더>
 | `--out-dir` | 결과 폴더. 생략하면 스크립트 또는 exe가 있는 폴더 |
 | `--entry-url` | 입력 JSON의 `entry_url`을 덮어씀 |
 | `--started-at` | ISO 8601 탐지 시작 시각을 덮어씀 |
-| `--deadline-sec N` | N초 뒤 취소하고 그때까지의 결과를 저장 |
+| `--deadline-sec N` | N초 뒤 취소하고 그때까지의 결과를 저장. 기본값 1700초 |
 | `--cancel-file PATH` | 파일이 생성되면 취소하고 부분 결과를 저장 |
 | `--no-ai` | Gemini를 호출하지 않고 규칙 엔진만 사용 |
 | `--topic` | 결과의 topic 지정. 기본값은 기존 `TOPIC` 상수 |
@@ -136,6 +139,8 @@ Java/Spring Boot 연동과 취소 파일 사용법은 [CLI 연동 계약](detect
 
 한 요소에서 여러 기법이 확인되면 기법별 finding으로 분리됩니다. `technique` 값은 `JAMO`, `HOMOGLYPH`, `TRANSPARENT`, `OFFSCREEN` 중 하나입니다. UTF-8 BOM 없이 저장되며 원본 증거 문구는 정규화하지 않고 유지합니다.
 
+공통 태그명만 사용한 `div`, `span`, `p`, `a` 등의 모호한 `location`은 여러 요소를 가리켜 오답이 될 가능성이 높으므로 입력 단계에서 제외합니다. 결과 저장 후에는 파일을 다시 읽어 필수 필드, 허용 기법, 중복 ID·검출, UTF-8 BOM 여부를 검증합니다.
+
 ## Gemini 설정
 
 프로젝트 루트에서 `.env.example`을 `.env`로 복사하고 필요한 값을 입력합니다.
@@ -154,13 +159,13 @@ GEMINI_MIN_CONFIDENCE=0.7
 GEMINI_TOTAL_BUDGET_SEC=120
 ```
 
-`.env`는 스크립트 또는 exe 옆에서 읽기 때문에 키 교체를 위해 다시 빌드할 필요가 없습니다. 키가 없거나 네트워크·API 호출이 실패하면 규칙 판정으로 자동 폴백합니다. API 키는 stdout, stderr, 예외 메시지, `detect_log.jsonl`에 기록하지 않습니다.
+`.env`는 스크립트 또는 exe 옆에서 읽기 때문에 키 교체를 위해 다시 빌드할 필요가 없습니다. 키가 없거나 네트워크·API 호출이 실패하면 규칙 판정으로 자동 폴백합니다. API 키는 stdout, stderr, 예외 메시지, `detect_log.jsonl`에 기록하지 않습니다. 동일 텍스트라도 주변 문맥이나 탐지 기법이 다르면 별도 후보로 판정하며, 숨김형 규칙 양성처럼 오탐 가능성이 있는 결과는 AI가 높은 신뢰도로 광고가 아니라고 판단할 때 제외할 수 있습니다.
 
 자세한 내용은 [Gemini 설정 안내](detector/AI_SETUP.md)를 참고하세요.
 
 ## 취소와 제한시간
 
-시간 제한을 지정하려면 다음처럼 실행합니다.
+기본 제한시간은 공모전의 30분 상한보다 짧은 1700초입니다. 더 짧은 시간 제한을 지정하려면 다음처럼 실행합니다.
 
 ```powershell
 python detector_cli.py --input elements.json --out-dir output --deadline-sec 1500
@@ -185,7 +190,7 @@ CLI는 파일 존재 여부를 0.5초 간격으로 확인합니다. 취소는 �
 python -m pytest -q
 ```
 
-현재 규칙 엔진, AI mock, 엄격한 결과 스키마 및 실제 CLI 서브프로세스 테스트를 포함해 **82개 테스트**가 통과합니다.
+현재 규칙 엔진, AI mock, 규칙 양성 재검토, 문맥별 후보 분리, 모호한 위치 차단, 엄격한 결과 스키마 및 실제 CLI 서브프로세스 테스트를 포함해 **90개 테스트**가 통과합니다.
 
 ## exe 빌드
 
@@ -246,7 +251,7 @@ result_path = write_result(
     finished_at=finished_at,
     verdicts=verdicts,
     out_dir=output_dir,
-    tool_version="0.4.0",
+    tool_version="0.5.0",
 )
 ```
 

@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+import detector_cli
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CLI_PATH = PROJECT_ROOT / "detector_cli.py"
@@ -53,6 +55,7 @@ def test_sample_writes_strict_result_and_final_stdout_record(tmp_path: Path) -> 
     assert payload["findings"]
     assert all(set(finding) == FINDING_KEYS for finding in payload["findings"])
     assert payload["meta"]["topic"] == "TOPIC"
+    assert payload["meta"]["tool_version"] == "0.5.0"
 
 
 def test_b_fields_extra_fields_and_string_frame_path_are_accepted(tmp_path: Path) -> None:
@@ -205,3 +208,34 @@ def test_dummy_key_never_appears_in_stdout_stderr_or_log(tmp_path: Path) -> None
 
     assert completed.returncode == 0
     assert dummy_key not in combined
+
+
+def test_default_deadline_finishes_before_contest_timeout() -> None:
+    args = detector_cli._build_parser().parse_args(["--input", str(SAMPLE_PATH)])
+
+    assert args.deadline_sec == detector_cli.DEFAULT_DEADLINE_SEC
+    assert 0 < args.deadline_sec < 30 * 60
+
+
+def test_ambiguous_bare_tag_input_is_skipped(tmp_path: Path) -> None:
+    input_path = tmp_path / "elements.json"
+    input_path.write_text(
+        json.dumps(
+            [
+                {
+                    "url": "https://example.test/",
+                    "location": "div",
+                    "text": "ㅋㅏㅈㅣㄴㅗ",
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    completed = _run_cli("--input", input_path, "--out-dir", tmp_path / "out", "--no-ai")
+    payload = json.loads((tmp_path / "out" / "result.json").read_text(encoding="utf-8"))
+
+    assert completed.returncode == 2
+    assert payload["findings"] == []
+    assert "must identify one element" in completed.stderr
